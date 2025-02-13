@@ -28,7 +28,7 @@ scikit-learn==1.6.1
 sentencepiece==0.2.0
 
 # OpenAI (if you want ChatGPT / GPT-4)
-openai==1.60.2
+openai==1.62.0
 
 
 # Additional
