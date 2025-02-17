@@ -25,27 +25,22 @@ const COLORS = [
 const processData = (data, vizConfig) => {
     if (!data || !data.length) return [];
     const { axes } = vizConfig;
-    // Determine which field to use as the label.
-    // Priority: vizConfig.labelField, then axes.group, then axes.x.
-    const labelField = vizConfig.labelField || axes?.group || axes?.x;
     return data.map((item, index) => {
       const processed = { ...item };
-  
-      // Format numeric values.
       Object.keys(item).forEach(key => {
         if (typeof item[key] === 'number' && item[key] !== null) {
           processed[key] = Number(item[key].toFixed(2));
         }
       });
-  
-      // Dynamically assign the "name" for labeling.
-      if (labelField && item[labelField] !== undefined && item[labelField] !== null) {
-        processed.name = String(item[labelField]);
+      // Use detected x-axis field for name
+      const xAxisKey = axes?.x ? axes.x.split(' as ')[0].trim() : null; // Handle aliases
+      if (xAxisKey && item[xAxisKey] !== undefined) {
+        processed.name = String(item[xAxisKey]);
+      } else if (item.employeeName) {
+        processed.name = item.employeeName;
       } else {
-        // Fallback: use a default label if no field is provided.
-        processed.name = `Group ${index + 1}`;
+        processed.name = "N/A";
       }
-  
       processed.color = COLORS[index % COLORS.length];
       return processed;
     });

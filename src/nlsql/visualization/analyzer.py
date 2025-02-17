@@ -81,7 +81,7 @@ class VisualizationAnalyzer:
                 "searchable": True
             },
             "axes": {},
-            "annotations": []
+            "annotations": [],
         }
         options.append(default_config)
         
@@ -94,7 +94,7 @@ class VisualizationAnalyzer:
                     "type": pattern_info["config"]["type"],
                     "settings": pattern_info["config"].get("settings", {}).copy(),
                     "axes": {},
-                    "annotations": []
+                    "annotations": [],
                 }
                 # For non-table visualizations, detect axes and generate annotations.
                 if config_option["type"] != "table":
@@ -117,29 +117,83 @@ class VisualizationAnalyzer:
             "group": None
         }
         
-        # Find SELECT columns.
-        select_tokens = []
+        # Extract GROUP BY columns
+        group_by_columns = []
+        group_by_found = False
         for token in parsed.tokens:
-            if isinstance(token, sqlparse.sql.IdentifierList):
-                select_tokens.extend(token.get_identifiers())
-            elif isinstance(token, sqlparse.sql.Identifier):
-                select_tokens.append(token)
-        
-        for token in select_tokens:
-            token_str = str(token).lower()
-            
-            # Time-based columns for x-axis.
-            if any(term in token_str for term in ['date', 'time', 'year', 'month']):
-                axes['x'] = str(token)
-            
-            # Numeric columns for y-axis.
-            elif any(term in token_str for term in ['count', 'sum', 'avg', 'amount', 'total']):
-                axes['y'] = str(token)
-            
-            # Categorical columns for grouping.
-            elif any(term in token_str for term in ['category', 'type', 'status', 'group']):
-                axes['group'] = str(token)
-        
+            if group_by_found:
+                if isinstance(token, sqlparse.sql.IdentifierList):
+                    group_by_columns.extend([str(t).strip() for t in token.get_identifiers()])
+                elif isinstance(token, sqlparse.sql.Identifier):
+                    group_by_columns.append(str(token).strip())
+                elif isinstance(token, sqlparse.sql.Token) and token.ttype == sqlparse.tokens.Punctuation and token.value == ',':
+                    continue
+                else:
+                    break
+            if isinstance(token, sqlparse.sql.Token) and token.value.lower() == 'group by':
+                group_by_found = True
+
+        # Process SELECT clause
+        select_columns = []
+        in_select = False
+        for token in parsed.tokens:
+            if isinstance(token, sqlparse.sql.Token) and token.value.upper() == 'SELECT':
+                in_select = True
+                continue
+            if in_select:
+                if isinstance(token, sqlparse.sql.IdentifierList):
+                    select_columns.extend(token.get_identifiers())
+                elif isinstance(token, sqlparse.sql.Identifier):
+                    select_columns.append(token)
+                elif isinstance(token, sqlparse.sql.Token) and token.value.upper() == 'FROM':
+                    break
+
+        # Classify SELECT columns as dimensions or measures
+        dimensions = []
+        measures = []
+        for col in select_columns:
+            col_str = str(col).lower()
+            # Check if column is an aggregate function
+            if re.search(r'\b(sum|count|avg|min|max)\s*\(', col_str):
+                match = re.search(r'\((.*?)\)', col_str)
+                if match:
+                    measure_col = match.group(1).strip().split()[-1]  # Get column inside aggregate
+                    measures.append(measure_col)
+                else:
+                    measures.append(col_str)
+            else:
+                dimensions.append(str(col).strip())
+
+        # Assign axes based on GROUP BY and SELECT analysis
+        if group_by_columns:
+            axes['x'] = group_by_columns[0]
+            if len(group_by_columns) > 1:
+                axes['group'] = group_by_columns[1]
+        elif dimensions:
+            axes['x'] = dimensions[0]
+            if len(dimensions) > 1:
+                axes['group'] = dimensions[1]
+
+        # Assign y-axis from measures
+        if measures:
+            axes['y'] = measures[0]
+
+        # Fallback to keyword detection if axes not detected
+        for col in select_columns + group_by_columns:
+            col_str = str(col).lower()
+            # Check for x-axis keywords (expanded list)
+            x_keywords = ['date', 'time', 'year', 'month', 'day', 'name', 'department', 'category', 'product', 'employee']
+            if not axes['x'] and any(kw in col_str for kw in x_keywords):
+                axes['x'] = str(col)
+            # Check for y-axis keywords
+            y_keywords = ['count', 'sum', 'avg', 'total', 'amount', 'sales']
+            if not axes['y'] and any(kw in col_str for kw in y_keywords):
+                axes['y'] = str(col)
+            # Check for group keywords
+            group_keywords = ['category', 'type', 'status', 'group', 'region']
+            if not axes['group'] and any(kw in col_str for kw in group_keywords):
+                axes['group'] = str(col)
+
         return axes
     
     async def _generate_annotations(
