@@ -58,14 +58,11 @@ async def process_query(
         schema_text = await schema_encoder.encode(inspector)
         
         # Generate the SQL query using the LangChain generator
-        generated_text, viz_config = await generator.generate_query(
+        sql_query, viz_config = await generator.generate_query(
             query_text=query_req.query_text,
             schema=schema_text,
             conversation_history=conversation_history
         )
-        
-        # Extract the pure SQL from the generated text
-        sql_query = extract_sql(generated_text)
         
         # Execute query
         with db_manager.get_session() as session:

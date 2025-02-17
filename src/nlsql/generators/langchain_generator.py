@@ -6,12 +6,18 @@ from typing import Optional, Dict, Any, Tuple, List
 from ..core.config import get_settings
 from ..core.exceptions import QueryGenerationError
 import re
+from nlsql.utils.helpers import extract_sql
+from nlsql.visualization.analyzer import VisualizationAnalyzer
+
 
 class LangChainQueryGenerator:
     """LangChain-based SQL query generator that uses conversation context."""
     
     def __init__(self):
         self.settings = get_settings()
+        
+        # Initialize VisualizationAnalyzer
+        self.viz_analyzer = VisualizationAnalyzer()
 
         self.llm = ChatOpenAI(
             model_name=self.settings.OPENAI_MODEL,
@@ -50,16 +56,26 @@ Generate only the SQL query without any additional explanation.
                 conversation_history=history_str
             )
             print(f"Generated Text:\n{generated_text}\n")
+            
+            # Extract the pure SQL from the generated text
+            sql_query = extract_sql(generated_text)
                         
             # For demonstration, we set a default visualization configuration.
-            viz_config = {
-                "type": "table",
-                "settings": {
-                    "pagination": True,
-                    "sortable": True,
-                    "searchable": True
-                }
-            }
-            return generated_text, viz_config
+            # viz_config = {
+            #     "type": "table",
+            #     "settings": {
+            #         "pagination": True,
+            #         "sortable": True,
+            #         "searchable": True
+            #     }
+            # }
+            
+            # Analyze for visualization
+            viz_metadata = await self.viz_analyzer.analyze(
+                query_text,
+                sql_query
+            )
+            
+            return sql_query, viz_metadata
         except Exception as e:
             raise QueryGenerationError(f"LangChain generation failed: {str(e)}")

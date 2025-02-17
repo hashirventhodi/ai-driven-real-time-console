@@ -33,6 +33,7 @@ async def main():
         sql_query, viz_config = await generator.generate_query(
             query_text=query_text,
             inspector=inspector,
+            
             conversation_history=conversation_history,
             context=context
         )

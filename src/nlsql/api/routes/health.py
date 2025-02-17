@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from datetime import datetime
+from sqlalchemy import inspect, text
 
 router = APIRouter()
 
@@ -14,7 +15,7 @@ async def health_check(request: Request):
         
         # Check database connection
         with request.app.state.db_manager.get_session() as session:
-            session.execute("SELECT 1")
+            session.execute(text("SELECT 1"))
         
         return {
             "status": "healthy",
