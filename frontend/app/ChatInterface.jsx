@@ -5,7 +5,7 @@ import { Send, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import QueryVisualization from './QueryVisualization';
+import MultiVisualization from './MultiVisualization';
 
 const ChatInput = ({ onSubmit, isLoading }) => {
   const [query, setQuery] = useState('');
@@ -119,7 +119,7 @@ const ChatInterface = () => {
         setContextId(data.context_id);
       }
 
-      // Add user message and response to chat
+      // Add user message and assistant response to chat
       setMessages(prev => [
         ...prev,
         { type: 'user', content: queryText },
@@ -127,7 +127,7 @@ const ChatInterface = () => {
           type: 'assistant',
           content: data.sql_query,
           results: data.results,
-          visualization: data.visualization
+          visualization: data.visualization // visualization object with "options" field
         }
       ]);
 
@@ -172,10 +172,11 @@ const ChatInterface = () => {
                   </pre>
                 </div>
                 {message.results && message.visualization && (
-                  <QueryVisualization
+                  // Update here: pass visualization.options as "visualizations"
+                  <MultiVisualization
                     data={message.results}
-                    visualization={message.visualization}
-                    title="Query Results"
+                    visualizations={message.visualization.options}
+                    title="Sales Analysis"
                   />
                 )}
               </div>

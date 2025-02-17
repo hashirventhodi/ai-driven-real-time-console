@@ -61,17 +61,19 @@ class VisualizationAnalyzer:
     
     async def analyze(self, query_text: str, sql_query: str) -> Dict[str, Any]:
         """
-        Analyze query to determine appropriate visualization.
+        Analyze query to determine all possible visualization options.
         
         Args:
-            query_text: Original natural language query
-            sql_query: Generated SQL query
+            query_text: Original natural language query.
+            sql_query: Generated SQL query.
             
         Returns:
-            Visualization configuration
+            Dictionary with an "options" key containing a list of visualization configurations.
         """
-        # Default configuration
-        viz_config = {
+        options = []
+        
+        # Always include the default table visualization.
+        default_config = {
             "type": "table",
             "settings": {
                 "pagination": True,
@@ -81,27 +83,29 @@ class VisualizationAnalyzer:
             "axes": {},
             "annotations": []
         }
+        options.append(default_config)
         
-        # Check for visualization patterns
         query_lower = query_text.lower()
+        # Iterate over each visualization pattern.
         for viz_type, pattern_info in self.viz_patterns.items():
             if re.search(pattern_info["pattern"], query_lower):
-                viz_config.update(pattern_info["config"])
-                break
+                # Create a copy of the configuration.
+                config_option = {
+                    "type": pattern_info["config"]["type"],
+                    "settings": pattern_info["config"].get("settings", {}).copy(),
+                    "axes": {},
+                    "annotations": []
+                }
+                # For non-table visualizations, detect axes and generate annotations.
+                if config_option["type"] != "table":
+                    config_option["axes"] = await self._detect_axes(sql_query)
+                    config_option["annotations"] = await self._generate_annotations(
+                        query_text, sql_query, config_option
+                    )
+                options.append(config_option)
+                logger.debug(f"Added visualization option: {config_option['type']}")
         
-        
-        # Detect axes if not table
-        if viz_config["type"] != "table":
-            viz_config["axes"] = await self._detect_axes(sql_query)
-            
-            # Add smart annotations
-            viz_config["annotations"] = await self._generate_annotations(
-                query_text,
-                sql_query,
-                viz_config
-            )
-        
-        return viz_config
+        return {"options": options}
     
     async def _detect_axes(self, sql_query: str) -> Dict[str, str]:
         """Detect appropriate axes from SQL query."""
@@ -113,7 +117,7 @@ class VisualizationAnalyzer:
             "group": None
         }
         
-        # Find SELECT columns
+        # Find SELECT columns.
         select_tokens = []
         for token in parsed.tokens:
             if isinstance(token, sqlparse.sql.IdentifierList):
@@ -124,15 +128,15 @@ class VisualizationAnalyzer:
         for token in select_tokens:
             token_str = str(token).lower()
             
-            # Time-based columns for x-axis
+            # Time-based columns for x-axis.
             if any(term in token_str for term in ['date', 'time', 'year', 'month']):
                 axes['x'] = str(token)
             
-            # Numeric columns for y-axis
+            # Numeric columns for y-axis.
             elif any(term in token_str for term in ['count', 'sum', 'avg', 'amount', 'total']):
                 axes['y'] = str(token)
             
-            # Categorical columns for grouping
+            # Categorical columns for grouping.
             elif any(term in token_str for term in ['category', 'type', 'status', 'group']):
                 axes['group'] = str(token)
         
@@ -147,7 +151,7 @@ class VisualizationAnalyzer:
         """Generate smart annotations for the visualization."""
         annotations = []
         
-        # Add trend lines for time series
+        # For line charts, add a trend line.
         if viz_config["type"] == "line":
             annotations.append({
                 "type": "line",
@@ -159,7 +163,7 @@ class VisualizationAnalyzer:
                 }
             })
         
-        # Add average lines for bar charts
+        # For bar charts, add an average line.
         elif viz_config["type"] == "bar":
             annotations.append({
                 "type": "line",
@@ -171,11 +175,24 @@ class VisualizationAnalyzer:
                 }
             })
         
-        # Add region highlights for important thresholds
+        # For scatter charts, add a regression line.
+        elif viz_config["type"] == "scatter":
+            annotations.append({
+                "type": "line",
+                "mode": "regression",
+                "label": "Regression Line",
+                "style": {
+                    "stroke": "rgba(0, 0, 255, 0.5)",
+                    "strokeWidth": 2,
+                    "strokeDasharray": "3,3"
+                }
+            })
+        
+        # If the query mentions a threshold, add a region highlight.
         if "threshold" in query_text.lower():
             annotations.append({
                 "type": "region",
-                "start": 0,  # Detect actual threshold
+                "start": 0,  # Placeholder for actual threshold detection.
                 "style": {
                     "fill": "rgba(255, 0, 0, 0.1)"
                 }
