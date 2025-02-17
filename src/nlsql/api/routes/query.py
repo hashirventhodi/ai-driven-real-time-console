@@ -7,6 +7,7 @@ from ..context import ContextManager
 from sqlalchemy import inspect, text
 from nlsql.utils.helpers import extract_sql
 import orjson
+from datetime import date, datetime
 
 router = APIRouter()
 
@@ -70,16 +71,18 @@ async def process_query(
             columns = result.keys()  # Get column names
             rows = result.fetchall()  # Fetch all rows
             
-            # Convert rows to dictionaries with proper decimal handling
-            data = []
-            for row in rows:
-                row_dict = {}
-                for col, value in zip(columns, row):
-                    if isinstance(value, Decimal):
-                        row_dict[col] = float(value)
-                    else:
-                        row_dict[col] = value
-                data.append(row_dict)
+            # Convert rows to dictionaries with proper decimal and date handling
+        data = []
+        for row in rows:
+            row_dict = {}
+            for col, value in zip(columns, row):
+                if isinstance(value, Decimal):
+                    row_dict[col] = float(value)  # Convert Decimal to float
+                elif isinstance(value, (date, datetime)):
+                    row_dict[col] = value.isoformat()  # Convert date/datetime to ISO format
+                else:
+                    row_dict[col] = value
+            data.append(row_dict)
         
         # Update context
         await context_manager.update_context(
@@ -98,6 +101,7 @@ async def process_query(
         )
         
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get(

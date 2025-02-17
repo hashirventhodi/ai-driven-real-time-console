@@ -26,17 +26,27 @@ class LangChainQueryGenerator:
         )
         self.prompt_template = PromptTemplate(
             input_variables=["schema", "query_text", "conversation_history"],
-            template="""You are an expert SQL query generator.
-Given the following database schema:
+            template="""You are an expert SQL query generator.  
+Your task is to generate an optimized SQL query based on the given database schema and user query.  
+
+### **Database Schema:**  
 {schema}
 
-Conversation history:
+### **Conversation History:**
 {conversation_history}
 
-Current natural language query:
+### **User Query:**
 {query_text}
 
-Generate only the SQL query without any additional explanation.
+### **Query Rules:**  
+1. **Only return a SQL query** (no explanations).  
+2. Use `JOINs` where necessary to connect tables properly.  
+3. Apply `GROUP BY` for aggregations.  
+4. Avoid `DELETE`, `DROP`, `UPDATE`, or modifying data.  
+5. Add `LIMIT 10` if the user does not specify limits.  
+
+### **Output Format:**  
+Only return the **SQL query** without any additional text.
 """
         )
         self.chain = LLMChain(llm=self.llm, prompt=self.prompt_template)

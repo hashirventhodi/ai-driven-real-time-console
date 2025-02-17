@@ -176,7 +176,7 @@ const ChatInterface = () => {
                   <MultiVisualization
                     data={message.results}
                     visualizations={message.visualization.options}
-                    title="Sales Analysis"
+                    title="Output"
                   />
                 )}
               </div>
