@@ -81,6 +81,7 @@ const utils = {
    * For multi-series detection, we want to find numeric columns 
    * that are not the X-axis (and not any special field like 'color', 'name', etc.).
    */
+  // In utils or wherever you defined getNumericColumns:
   getNumericColumns: (sampleRow, xKey) => {
     if (!sampleRow) return [];
     const numericCols = [];
@@ -89,6 +90,7 @@ const utils = {
         col !== xKey &&
         col !== "color" &&
         col !== "name" &&
+        col !== "value" &&          // <--- Add this line
         typeof sampleRow[col] === "number"
       ) {
         numericCols.push(col);
@@ -119,6 +121,9 @@ const useProcessedData = (data, vizConfig) => {
     const xAxisKey = axes?.x ? utils.cleanKey(axes.x) : null;
     const yAxisKey = axes?.y ? utils.cleanKey(axes.y) : null;
 
+    // Log the axes configuration for debugging
+    console.log('Axes Config:', { xAxisKey, yAxisKey });
+
     return data.map((row, index) => {
       const processed = {};
 
@@ -129,17 +134,20 @@ const useProcessedData = (data, vizConfig) => {
         }
       });
 
-      // Ensure we have "name" for category-based charts (bar, line, pie)
-      processed.name = xAxisKey
-        ? String(processed[xAxisKey] ?? `Category ${index + 1}`)
-        : `Category ${index + 1}`;
+      console.log("Processed", processed);
 
-      // Ensure we have a single "value" for Pie or fallback usage.
-      // If the y-axis is numeric, use that. Otherwise see if there's a "value" or "percentage".
-      processed.value =
-        typeof processed[yAxisKey] === "number"
-          ? processed[yAxisKey]
-          : processed.value ?? processed.percentage ?? 0;
+      // For pie charts, ensure we have the correct name and value mapping
+      if (vizConfig?.type === 'pie') {
+        // Use the x-axis key for name (country in this case)
+        processed.name = String(processed[xAxisKey] ?? `Category ${index + 1}`);
+        // Use the y-axis key for value (customerCount in this case)
+        console.log(processed[yAxisKey]);
+        processed.value = Number(processed[yAxisKey]);
+      } else {
+        // For other chart types
+        processed.name = xAxisKey ? String(processed[xAxisKey]) : `Category ${index + 1}`;
+        processed.value = yAxisKey ? Number(processed[yAxisKey]) : 0;
+      }
 
       // Assign color
       processed.color = COLORS.categorical[index % COLORS.categorical.length];
@@ -148,6 +156,9 @@ const useProcessedData = (data, vizConfig) => {
     });
   }, [data, vizConfig]);
 };
+
+
+
 
 /* ------------------------------------
   3. Helper to Render Annotations
@@ -336,12 +347,20 @@ const PieChartComponent = ({ data, config }) => {
           label={({ name, value }) => `${name}: ${value}`}
         >
           {data.map((entry, index) => (
-            <Cell key={`pie-${index}`} fill={entry.color} />
+            <Cell 
+              key={`cell-${index}`} 
+              fill={entry.color || COLORS.categorical[index % COLORS.categorical.length]}
+            />
           ))}
         </Pie>
-        <Tooltip />
-        <Legend />
-        {/* Annotations typically don't apply to Pie, but you could add custom logic here. */}
+        <Tooltip 
+          formatter={(value, name) => [`${value} customers`, name]}
+        />
+        <Legend 
+          layout="horizontal" 
+          verticalAlign="bottom" 
+          align="center"
+        />
       </PieChart>
     </ChartWrapper>
   );

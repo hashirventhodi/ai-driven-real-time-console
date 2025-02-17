@@ -8,6 +8,10 @@ logger = setup_logging(__name__)
 class VisualizationAnalyzer:
     """Analyzes queries to determine appropriate visualizations, axes, and annotations."""
 
+    MEASURE_REGEX = re.compile(r'\b(sum|count|avg|min|max)\s*\(', re.IGNORECASE)
+    ALIAS_REGEX = re.compile(r'\bas\s+(\w+)$', re.IGNORECASE)
+    FUNC_ARG_REGEX = re.compile(r'\((.*?)\)')
+    
     def __init__(self):
         # Patterns to detect certain chart "intents" in the user query
         self.viz_patterns = {
@@ -120,11 +124,7 @@ class VisualizationAnalyzer:
 
     async def _detect_axes(self, sql_query: str) -> Dict[str, Any]:
         """
-        Parse SQL to detect:
-          - dimensions (non-aggregate columns)
-          - measures (aggregate columns)
-          - group-by columns
-        Then guess X-axis, Y-axis, group, etc. for charting.
+        Parse SQL to detect axes with proper column names as they appear in results.
         """
         parsed_stmt = sqlparse.parse(sql_query)
         if not parsed_stmt:
@@ -133,15 +133,13 @@ class VisualizationAnalyzer:
         stmt = parsed_stmt[0]
         axes = {"x": None, "y": None, "group": None}
 
-        # 1. Identify GROUP BY columns
-        group_by_columns = self._extract_groupby_columns(stmt)
-
+        # Extract columns with proper names
+        group_by_columns = [self._extract_column_name(col) for col in self._extract_groupby_columns(stmt)]
+        
         # 2. Identify SELECT columns (dimensions vs. measures)
         select_dims, select_measures = self._extract_select_columns(stmt)
 
-        # 3. Basic assignment to axes
-        #    - If there's a GROUP BY, that might be your X or "group" axis
-        #    - If there's at least one measure, that might be Y
+        # Assign axes using clean column names
         if group_by_columns:
             axes["x"] = group_by_columns[0]
             if len(group_by_columns) > 1:
@@ -155,7 +153,7 @@ class VisualizationAnalyzer:
         # for measures, pick the first as y
         if select_measures:
             axes["y"] = select_measures[0]
-        
+
         # Optionally refine based on known keywords or partial name matches
         # e.g. if a dimension is named "date" or "year", it's likely the x-axis
         axes = self._refine_axis_guesses(axes, select_dims + group_by_columns, select_measures)
@@ -189,6 +187,7 @@ class VisualizationAnalyzer:
     def _extract_select_columns(self, stmt) -> (List[str], List[str]):
         """
         Parse the SELECT clause to separate dimension columns vs. measure (aggregates).
+        Preserves the original case of column names and aliases.
         
         Returns:
           (dimension_columns, measure_columns)
@@ -216,33 +215,46 @@ class VisualizationAnalyzer:
 
         return select_dims, select_measures
 
+
+    def _extract_column_name(self, column_str: str) -> str:
+        """
+        Extract the final column name from a SQL column expression.
+        Handles cases like:
+        - "table.column as alias" -> "alias"
+        - "SUM(column) as alias" -> "alias"
+        - "table.column" -> "column"
+        """
+        # First check for alias
+        alias_match = self.ALIAS_REGEX.search(column_str)
+        if alias_match:
+            return alias_match.group(1).strip()
+        
+        # If no alias, check if it's a table.column format
+        if '.' in column_str:
+            return column_str.split('.')[-1].strip()
+            
+        # If it's an aggregate function, extract the alias or the base column name
+        if self.MEASURE_REGEX.search(column_str):
+            func_match = self.FUNC_ARG_REGEX.search(column_str)
+            if func_match:
+                base_col = func_match.group(1).strip()
+                if '.' in base_col:
+                    return base_col.split('.')[-1].strip()
+                return base_col
+        
+        # Otherwise return the original column name
+        return column_str.strip()
+
     def _classify_column(self, token, select_dims, select_measures):
-        """Classify a single column token into dimension or measure."""
-        col_str = str(token).lower()
-        # e.g. SUM(), COUNT(), AVG(), MIN(), MAX() => measure
-        if re.search(r'\b(sum|count|avg|min|max)\s*\(', col_str):
-            # Attempt to find the alias if present
-            # e.g. "SUM(sales) as total_sales" => measure "total_sales"
-            alias_match = re.search(r'\bas\s+(\w+)$', col_str)
-            if alias_match:
-                measure_col = alias_match.group(1).strip()
-                select_measures.append(measure_col)
-            else:
-                # fallback, e.g. pick entire col_str or inside the function
-                func_match = re.search(r'\((.*?)\)', col_str)
-                measure_col = func_match.group(1).strip() if func_match else col_str
-                select_measures.append(measure_col)
+        """Classify a column as dimension or measure and store its final name."""
+        col_str = str(token).strip()
+        final_name = self._extract_column_name(col_str)
+        
+        if self.MEASURE_REGEX.search(col_str):
+            select_measures.append(final_name)
         else:
-            # treat as dimension
-            # also check for an alias => "region as reg"
-            alias_match = re.search(r'\bas\s+(\w+)$', col_str)
-            if alias_match:
-                dim_col = alias_match.group(1).strip()
-                select_dims.append(dim_col)
-            else:
-                # fallback
-                dim_col = str(token).strip()
-                select_dims.append(dim_col)
+            select_dims.append(final_name)
+
 
     def _refine_axis_guesses(self, axes, dimensions, measures) -> Dict[str, Optional[str]]:
         """
